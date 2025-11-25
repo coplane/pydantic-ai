@@ -34,6 +34,7 @@ from ..messages import (
     ThinkingPart,
     ToolCallPart,
     ToolReturnPart,
+    UploadedFile,
     UserPromptPart,
     VideoUrl,
 )
@@ -62,6 +63,7 @@ try:
         CountTokensConfigDict,
         ExecutableCode,
         ExecutableCodeDict,
+        File,
         FileDataDict,
         FinishReason as GoogleFinishReason,
         FunctionCallDict,
@@ -544,7 +546,7 @@ class GoogleModel(Model):
                     if isinstance(part, SystemPromptPart):
                         system_parts.append({'text': part.content})
                     elif isinstance(part, UserPromptPart):
-                        message_parts.extend(await self._map_user_prompt(part))
+                        message_parts.extend(await self._map_user_prompt(part, contents))
                     elif isinstance(part, ToolReturnPart):
                         message_parts.append(
                             {
@@ -590,7 +592,7 @@ class GoogleModel(Model):
 
         return system_instruction, contents
 
-    async def _map_user_prompt(self, part: UserPromptPart) -> list[PartDict]:
+    async def _map_user_prompt(self, part: UserPromptPart, contents: list[ContentUnionDict]) -> list[PartDict]:
         if isinstance(part.content, str):
             return [{'text': part.content}]
         else:
@@ -626,6 +628,12 @@ class GoogleModel(Model):
                     else:
                         file_data_dict: FileDataDict = {'file_uri': item.url, 'mime_type': item.media_type}
                         content.append({'file_data': file_data_dict})  # pragma: lax no cover
+                elif isinstance(item, UploadedFile):
+                    if not isinstance(item.file, File):
+                        raise UserError('UploadedFile.file must be a genai.types.File object')
+                    # genai.types.File is its own ContentUnionDict and not a
+                    # PartDict, so append to the contents directly.
+                    contents.append(item.file)
                 elif isinstance(item, CachePoint):
                     # Google Gemini doesn't support prompt caching via CachePoint
                     pass

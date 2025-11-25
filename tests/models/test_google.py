@@ -39,6 +39,7 @@ from pydantic_ai import (
     ThinkingPartDelta,
     ToolCallPart,
     ToolReturnPart,
+    UploadedFile,
     UsageLimitExceeded,
     UserPromptPart,
     VideoUrl,
@@ -61,6 +62,7 @@ from ..parts_from_messages import part_types_from_messages
 with try_import() as imports_successful:
     from google.genai import errors
     from google.genai.types import (
+        File,
         FinishReason as GoogleFinishReason,
         GenerateContentResponse,
         GenerateContentResponseUsageMetadata,
@@ -2772,6 +2774,21 @@ def test_map_usage():
     )
 
 
+async def test_uploaded_file_input(allow_model_requests: None, google_provider: GoogleProvider):
+    m = GoogleModel('gemini-2.5-flash', provider=google_provider)
+    google_file = File(
+        name='files/6myu0b1v3mxl',
+        mime_type='application/pdf',
+        uri='https://generativelanguage.googleapis.com/v1beta/files/6myu0b1v3mxl',
+    )
+    agent = Agent(m)
+
+    result = await agent.run(['Give me a short description of this image', UploadedFile(file=google_file)])
+    assert result.output == snapshot(
+        'The image displays a classic smiley face. It features a bright yellow circular face with two simple black dot eyes and an upward-curved black line forming a smile. The yellow circle has a subtle darker yellow outline and is set against a plain white background.'
+    )
+
+
 async def test_google_builtin_tools_with_other_tools(allow_model_requests: None, google_provider: GoogleProvider):
     m = GoogleModel('gemini-2.5-flash', provider=google_provider)
 
@@ -3646,7 +3663,7 @@ async def test_cache_point_filtering():
     model = GoogleModel('gemini-1.5-flash', provider=GoogleProvider(api_key='test-key'))
 
     # Test that CachePoint in a list is handled (triggers line 606)
-    content = await model._map_user_prompt(UserPromptPart(content=['text before', CachePoint(), 'text after']))  # pyright: ignore[reportPrivateUsage]
+    content = await model._map_user_prompt(UserPromptPart(content=['text before', CachePoint(), 'text after']), [])  # pyright: ignore[reportPrivateUsage]
 
     # CachePoint should be filtered out, only text content should remain
     assert len(content) == 2

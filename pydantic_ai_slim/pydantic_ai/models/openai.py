@@ -10,6 +10,7 @@ from dataclasses import dataclass, field, replace
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Literal, cast, overload
 
+from httpx import URL
 from pydantic import ValidationError
 from pydantic_core import to_json
 from typing_extensions import assert_never, deprecated
@@ -44,6 +45,7 @@ from ..messages import (
     ThinkingPart,
     ToolCallPart,
     ToolReturnPart,
+    UploadedFile,
     UserPromptPart,
     VideoUrl,
 )
@@ -56,7 +58,7 @@ from . import Model, ModelRequestParameters, StreamedResponse, check_allow_model
 
 try:
     from openai import NOT_GIVEN, APIConnectionError, APIStatusError, AsyncOpenAI, AsyncStream
-    from openai.types import AllModels, chat, responses
+    from openai.types import AllModels, FileObject, chat, responses
     from openai.types.chat import (
         ChatCompletionChunk,
         ChatCompletionContentPartImageParam,
@@ -977,6 +979,9 @@ class OpenAIChatModel(Model):
                                 type='file',
                             )
                         )
+                elif isinstance(item, UploadedFile):
+                    file = _map_uploaded_file(item, self._provider)
+                    content.append(File(file=FileFile(file_id=file.id), type='file'))
                 elif isinstance(item, VideoUrl):  # pragma: no cover
                     raise NotImplementedError('VideoUrl is not supported for OpenAI')
                 elif isinstance(item, CachePoint):
@@ -1496,7 +1501,7 @@ class OpenAIResponsesModel(Model):
                     if isinstance(part, SystemPromptPart):
                         openai_messages.append(responses.EasyInputMessageParam(role='system', content=part.content))
                     elif isinstance(part, UserPromptPart):
-                        openai_messages.append(await self._map_user_prompt(part))
+                        openai_messages.append(await self._map_user_prompt(part, self._provider))
                     elif isinstance(part, ToolReturnPart):
                         call_id = _guard_tool_call_id(t=part)
                         call_id, _ = _split_combined_tool_call_id(call_id)
@@ -1721,8 +1726,7 @@ class OpenAIResponsesModel(Model):
             response_format_param['strict'] = o.strict
         return response_format_param
 
-    @staticmethod
-    async def _map_user_prompt(part: UserPromptPart) -> responses.EasyInputMessageParam:  # noqa: C901
+    async def _map_user_prompt(self, part: UserPromptPart) -> responses.EasyInputMessageParam:  # noqa: C901
         content: str | list[responses.ResponseInputContentParam]
         if isinstance(part.content, str):
             content = part.content
@@ -1795,6 +1799,9 @@ class OpenAIResponsesModel(Model):
                             filename=f'filename.{downloaded_item["data_type"]}',
                         )
                     )
+                elif isinstance(item, UploadedFile):
+                    file = _map_uploaded_file(item, self._provider)
+                    content.append(responses.ResponseInputFileParam(file_id=file.id, type='input_file'))
                 elif isinstance(item, VideoUrl):  # pragma: no cover
                     raise NotImplementedError('VideoUrl is not supported for OpenAI.')
                 elif isinstance(item, CachePoint):
@@ -2310,6 +2317,22 @@ def _map_usage(
         api_flavor=api_flavor,
         details=details,
     )
+
+
+def _map_openai_uploaded_file(item: UploadedFile) -> FileObject:
+    if not isinstance(item.file, FileObject):
+        raise UserError('UploadedFile.file must be an openai.types.FileObject')
+    return item.file
+
+
+def _map_uploaded_file(uploaded_file: UploadedFile, provider: Provider[Any]) -> FileObject:
+    """Map an UploadedFile to a File object."""
+    url = URL(provider.base_url)
+
+    if url.host == 'api.openai.com':
+        return _map_openai_uploaded_file(uploaded_file)
+    else:
+        raise UserError(f'UploadedFile is not supported for `{provider.name}` with base_url {provider.base_url}.')
 
 
 def _map_provider_details(

@@ -633,6 +633,17 @@ class BinaryImage(BinaryContent):
             raise ValueError('`BinaryImage` must be have a media type that starts with "image/"')  # pragma: no cover
 
 
+@dataclass(repr=False)
+class UploadedFile:
+    """File uploaded to the LLM provider."""
+
+    file: Any
+    """A provider-specific file object, e.g. a file ID or a file URL."""
+
+    kind: Literal['uploaded-file'] = 'uploaded-file'
+    """Type identifier, this is available on all parts as a discriminator."""
+
+
 @dataclass
 class CachePoint:
     """A cache point marker for prompt caching.
@@ -656,7 +667,7 @@ class CachePoint:
     * Anthropic. See https://docs.claude.com/en/docs/build-with-claude/prompt-caching#1-hour-cache-duration for more information."""
 
 
-MultiModalContent = ImageUrl | AudioUrl | DocumentUrl | VideoUrl | BinaryContent
+MultiModalContent = ImageUrl | AudioUrl | DocumentUrl | VideoUrl | BinaryContent | UploadedFile
 UserContent: TypeAlias = str | MultiModalContent | CachePoint
 
 
